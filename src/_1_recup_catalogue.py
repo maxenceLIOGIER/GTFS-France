@@ -1,15 +1,22 @@
+"""
+Script n°1 :
+- Récupère les datasets GTFS depuis l'API de transport.data.gouv.fr
+- Construit un catalogue recensant les métadonnées pour chaque GTFS
+- Sauvegarde le catalogue au format CSV
+"""
+
 import requests
 import pandas as pd
 from pathlib import Path
 import time
 import logging
+import odf
 
 DATA_DIR = Path("data")
-CATALOG_DIR = DATA_DIR / "catalogue"
-GTFS_DIR = DATA_DIR / "raw_gtfs"
+CATALOG_DIR = DATA_DIR / "catalogues"
 
 
-def fetch_gtfs_datasets(page_size=1000, sleep=0.2):
+def fetch_gtfs_datasets(page_size=1000, sleep=0.5):
     datasets = []
     page = 1
 
@@ -17,14 +24,12 @@ def fetch_gtfs_datasets(page_size=1000, sleep=0.2):
         params = {"q": "gtfs", "sort": "-updated", "page": page, "page_size": page_size}
 
         r = requests.get(f"{BASE_URL}/datasets/", params=params, timeout=(3, 10))
-
         if r.status_code != 200:
             print(f"⚠️  Page {page} – status {r.status_code}, on saute")
             page += 1
             continue
 
         data = r.json()
-        print(data[:1])
         if not data:
             break
 
@@ -32,9 +37,6 @@ def fetch_gtfs_datasets(page_size=1000, sleep=0.2):
 
         if len(data) < page_size:
             break
-
-        if page % 5 == 0:
-            print(f"Page {page}, datasets récupérés : {len(datasets)}")
 
         page += 1
         time.sleep(sleep)
@@ -66,27 +68,43 @@ def build_gtfs_catalog(datasets):
                 }
             )
 
-    return pd.DataFrame(rows)
+    catalogue_gtfs = pd.DataFrame(rows)
+
+    print(f"Catalogue construit : {len(catalogue_gtfs)} GTFS trouvés !")
+
+    gtfs_catalog_path = CATALOG_DIR / "gtfs_catalog.csv"
+    catalogue_gtfs.to_csv(gtfs_catalog_path, index=False)
+    print("Catalogue GTFS sauvegardé !")
+
+
+def catalogue_aoms():
+    url = (
+        "https://www.data.gouv.fr/api/1/datasets/r/ef24f052-1eb9-4e2b-870f-e9c6024c83d2"
+    )
+    # cet url télécharge directement un fichier ods, trouvé depuis cette page :
+    # www.data.gouv.fr/datasets/liste-et-composition-des-autorites-organisatrices-de-la-mobilite-aom
+
+    aoms = pd.read_excel(url, engine="odf")
+    print(f"Catalogue construit : {aoms.shape[0]} AOM trouvées !")
+
+    aom_catalog_path = CATALOG_DIR / "aom_catalog.csv"
+    aoms.to_csv(aom_catalog_path, index=False)
+    print("Catalogue AOM sauvegardé !")
 
 
 if __name__ == "__main__":
 
-    BASE_URL = "https://transport.data.gouv.fr/api/"
+    BASE_URL = "https://transport.data.gouv.fr/api"
 
     logging.basicConfig(level=logging.INFO)
 
     # s'assurer que les dossiers existent
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     CATALOG_DIR.mkdir(parents=True, exist_ok=True)
-    GTFS_DIR.mkdir(parents=True, exist_ok=True)
 
     print("Récupération des datasets GTFS depuis transport.data.gouv.fr...")
     datasets = fetch_gtfs_datasets()
+    build_gtfs_catalog(datasets)
 
-    print("Récupération des datasets terminée, construction du catalogue...")
-    catalogue = build_gtfs_catalog(datasets)
-    print(f"Catalogue construit : {len(catalogue)} GTFS trouvés !")
-
-    catalog_path = CATALOG_DIR / "gtfs_catalog.csv"
-    catalogue.to_csv(catalog_path, index=False)
-    print("Catalogue sauvegardé !")
+    print("\nRécupération des AOM...")
+    catalogue_aoms()
