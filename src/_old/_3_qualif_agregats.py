@@ -1,8 +1,11 @@
 import zipfile
 from pathlib import Path
-import pandas as pd
 import unicodedata
 import re
+import pandas as pd
+
+# TODO : plutôt passer par le numéro siren de l'AOM, compris dans les métadonnées de l'agrégat
+# https://transport.data.gouv.fr/swaggerui#/datasets/API.DatasetController.datasets_by_id
 
 
 def listing_agregats_zip():

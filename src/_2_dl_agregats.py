@@ -4,20 +4,26 @@ Script n°2 :
 - Sauvegarde les fichiers ZIP
 """
 
-import requests
 from pathlib import Path
+import requests
 import pandas as pd
 
 
 def fetch_agregates(catalogue):
-    agregates = catalogue[
+    """
+    Récupère les agrégats à partir du catalogue.
+    """
+    agregats = catalogue[
         catalogue["dataset_title"].str.contains("agrégat", case=False, na=False)
         | catalogue["dataset_title"].str.contains("agregat", case=False, na=False)
     ]
-    return agregates
+    return agregats
 
 
 def download_file(agregat):
+    """
+    Télécharge un agrégat à partir de son URL.
+    """
     url = agregat["resource_url"]
     dataset_name = agregat["dataset_title"].replace(" ", "_").lower()
     output_path = Path("data/raw_gtfs/agregats") / f"{dataset_name}.zip"
