@@ -94,7 +94,27 @@ def missing_aom_in_agregat(agregat, catalogue_aom, url_template):
 
     # Attention, dans le catalogue des AOM, il y a des siren en doublons
     # Ce sont les aom du type Région Auvergne-Rhône-Alpes (CC Auzon Communauté)
-    # TODO : filtrer ces AOM ?
+
+    siren_to_filter = [
+        "200053767",
+        "200053726",
+        "233500016",
+        "234500023",
+        "200076958",
+        "200052264",
+        "239730013",
+        "200053742",
+        "229850003",
+        "200053403",
+        "200053759",
+        "200053791",
+        "234400034",
+        "231300021",
+    ]
+
+    liste_missing_aoms = liste_missing_aoms[
+        ~liste_missing_aoms["N° SIRENAOM"].isin(siren_to_filter)
+    ]
 
     # Mise en forme des résultats
     missing_aoms = pd.DataFrame(

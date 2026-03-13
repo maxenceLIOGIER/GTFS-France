@@ -5,15 +5,15 @@ Script n°1 :
 - Sauvegarde le catalogue au format CSV
 """
 
-import requests
-import pandas as pd
 from pathlib import Path
 import time
 import logging
-import odf
+import requests
+import pandas as pd
 
 DATA_DIR = Path("data")
 CATALOG_DIR = DATA_DIR / "catalogues"
+BASE_URL = "https://transport.data.gouv.fr/api"
 
 
 def fetch_gtfs_datasets(page_size=1000, sleep=0.5):
@@ -93,8 +93,6 @@ def catalogue_aoms():
 
 
 if __name__ == "__main__":
-
-    BASE_URL = "https://transport.data.gouv.fr/api"
 
     logging.basicConfig(level=logging.INFO)
 
