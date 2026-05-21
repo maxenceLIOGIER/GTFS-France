@@ -30,7 +30,8 @@ base_dir <- normalizePath(
     mustWork = FALSE
 )
 fs::dir_create(base_dir)
-
+raw_dir <- file.path(data_dir, "transport.data.gouv.fr", "raw_tables", fraicheur)
+fs::dir_create(raw_dir)
 
 ### Récupération des métadonnées GTFS depuis l'API
 
@@ -238,6 +239,16 @@ for (i in seq_along(gtfs_dirs)) {
             list(dataset_id = dataset_id, result = "invalid schema")
         )
         next
+    }
+
+    # --- Sauvegarde des tables brutes (avant tout filtrage) ---
+    for (tbl in names(initial_data)) {
+        tbl_dt <- data.table::as.data.table(initial_data[[tbl]])
+        tbl_dt[, dataset_id := dataset_id]
+        tbl_dt[, date_extraction := as.character(fraicheur)]
+        out_tbl_dir <- file.path(raw_dir, tbl)
+        fs::dir_create(out_tbl_dir)
+        arrow::write_parquet(tbl_dt, file.path(out_tbl_dir, glue("{dataset_id}.parquet")))
     }
 
     # --- Nettoyage de base ---
@@ -547,8 +558,29 @@ for (i in seq_along(gtfs_dirs)) {
 }
 
 
+### Consolidation des tables brutes GTFS
 
-### Étape 4 - Sauvegarde des résultats compilés
+cli::cli_h1("Consolidation des tables GTFS brutes")
+
+tables_gtfs <- c("stops", "routes", "trips", "stop_times", "agency", "calendar", "calendar_dates")
+consolidated_dir <- file.path(data_dir, "transport.data.gouv.fr", "consolidated", fraicheur)
+fs::dir_create(consolidated_dir)
+
+for (tbl in tables_gtfs) {
+    fichiers <- list.files(file.path(raw_dir, tbl), pattern = "\\.parquet$", full.names = TRUE)
+    if (length(fichiers) == 0) {
+        cli::cli_alert_warning("Table {.val {tbl}} : aucun fichier trouvé, on passe.")
+        next
+    }
+    out_path_tbl <- file.path(consolidated_dir, glue("{tbl}.parquet"))
+    arrow::open_dataset(fichiers) |>
+        dplyr::collect() |>
+        arrow::write_parquet(out_path_tbl)
+    cli::cli_alert_success("Table {.val {tbl}} consolidée ({length(fichiers)} datasets).")
+}
+
+
+### Sauvegarde des résultats compilés
 
 cli::cli_h1("Sauvegarde")
 
