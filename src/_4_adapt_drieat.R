@@ -108,6 +108,7 @@ cli::cli_alert_info("{length(gtfs_dirs)} dossiers GTFS à traiter.")
 cli::cli_h1("Lecture et compilation des GTFS")
 
 all_stops_data <- data.table::data.table()
+networks_data <- data.table::data.table()
 result_extract <- data.table::data.table()
 n_datasets <- length(gtfs_dirs)
 
@@ -241,6 +242,79 @@ for (i in seq_along(gtfs_dirs)) {
         next
     }
 
+    # --- Préfixage des identifiants par dataset_id ---
+    # Colonnes d'identifiants directs
+    direct_id_cols <- list(
+        stops = c("stop_id"),
+        routes = c("route_id", "agency_id"),
+        trips = c("trip_id", "route_id", "service_id", "shape_id"),
+        stop_times = c("trip_id", "stop_id"),
+        agency = c("agency_id"),
+        calendar = c("service_id"),
+        calendar_dates = c("service_id"),
+        shapes = c("shape_id")
+    )
+    # parent_station est une référence vers stop_id, on la traite uniquement quand non vide
+    for (tbl in names(initial_data)) {
+        cols <- intersect(direct_id_cols[[tbl]], colnames(initial_data[[tbl]]))
+        for (col in cols) {
+            set(initial_data[[tbl]],
+                j = col,
+                value = paste0(dataset_id, "_", initial_data[[tbl]][[col]])
+            )
+        }
+        if (tbl == "stops" && "parent_station" %in% colnames(initial_data$stops)) {
+            initial_data$stops[
+                !is.na(parent_station) & parent_station != "",
+                parent_station := paste0(dataset_id, "_", parent_station)
+            ]
+        }
+    }
+
+
+    # --- Résumé du réseau ---
+    agency_names <- if ("agency" %in% names(initial_data) && nrow(initial_data$agency) > 0) {
+        paste0(unique(initial_data$agency$agency_name), collapse = ", ")
+    } else {
+        NA_character_
+    }
+
+    cal_dates <- if (
+        "calendar_dates" %in% names(initial_data) && nrow(initial_data$calendar_dates) > 0
+    ) {
+        initial_data$calendar_dates$date
+    } else {
+        as.Date(character(0))
+    }
+
+    cal_range <- if ("calendar" %in% names(initial_data) && nrow(initial_data$calendar) > 0) {
+        list(
+            min = min(c(initial_data$calendar$start_date, cal_dates), na.rm = TRUE),
+            max = max(c(initial_data$calendar$end_date, cal_dates), na.rm = TRUE)
+        )
+    } else if (length(cal_dates) > 0) {
+        list(min = min(cal_dates, na.rm = TRUE), max = max(cal_dates, na.rm = TRUE))
+    } else {
+        list(min = NA_real_, max = NA_real_)
+    }
+
+    dataset_info <- dplyr::filter(gtfs_datasets, resources_id == as.integer(dataset_id))
+    resource_url <- dplyr::pull(dataset_info, resources_url) |> dplyr::first()
+    dataset_title <- dplyr::pull(dataset_info, title) |> dplyr::first()
+
+    networks_data <- rbind(networks_data, data.table::data.table(
+        dataset_id = dataset_id,
+        dataset_title = dataset_title,
+        agency_name = agency_names,
+        date_extraction = as.character(fraicheur),
+        date_min = as.character(cal_range$min),
+        date_max = as.character(cal_range$max),
+        nb_stops = nrow(initial_data$stops),
+        nb_routes = nrow(initial_data$routes),
+        url = resource_url
+    ), fill = TRUE)
+
+
     # --- Sauvegarde des tables brutes (avant tout filtrage) ---
     for (tbl in names(initial_data)) {
         tbl_dt <- data.table::as.data.table(initial_data[[tbl]])
@@ -307,6 +381,7 @@ for (i in seq_along(gtfs_dirs)) {
     tryCatch(
         {
             # --- Filtrage sur les trips et routes du jour ---
+            services_actifs <- unique(data.table::as.data.table(services_actifs)[, .(service_id)])
             initial_data$trips <- initial_data$trips[services_actifs, on = "service_id"]
             initial_data$routes <- initial_data$routes[route_id %in% initial_data$trips$route_id]
 
@@ -583,6 +658,12 @@ for (tbl in tables_gtfs) {
 ### Sauvegarde des résultats compilés
 
 cli::cli_h1("Sauvegarde")
+
+# Tableau des réseaux
+networks_out <- file.path(data_dir, glue("networks_{format(fraicheur, '%Y%m%d')}.parquet"))
+arrow::write_parquet(networks_data, networks_out)
+cli::cli_alert_success("{nrow(networks_data)} réseaux recensés → {.path {networks_out}}")
+
 
 # Rapport d'extraction
 arrow::write_parquet(
