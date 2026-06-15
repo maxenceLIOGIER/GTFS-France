@@ -1,11 +1,10 @@
-import zipfile
 from pathlib import Path
 import unicodedata
 import re
 import requests
 import pandas as pd
 
-from _2_dl_agregats import fetch_agregates
+from _old._2_dl_agregats import fetch_agregates
 
 
 def listing_agregats_zip():

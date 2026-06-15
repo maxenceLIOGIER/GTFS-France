@@ -18,7 +18,8 @@ library(stopwords)
 
 ### Paramètres
 
-fraicheur <- Sys.Date()
+# fraicheur <- Sys.Date()
+fraicheur <- as.Date("2026-06-01")
 fraicheur_jour <- wday(fraicheur, label = TRUE, abbr = FALSE, locale = "en") |> tolower()
 redownload <- FALSE # FALSE pour réutiliser un téléchargement existant
 
@@ -73,15 +74,6 @@ gtfs_datasets <- gtfs_datasets_info |>
 
 cli::cli_alert_success("{nrow(gtfs_datasets)} datasets GTFS disponibles sur l'API.")
 
-# Sauvegarde des métadonnées
-arrow::write_parquet(
-    gtfs_datasets,
-    file.path(
-        data_dir, "transport.data.gouv.fr",
-        glue("{gsub('-','',fraicheur)}_gtfs_datasets_info.parquet")
-    )
-)
-
 
 ### Téléchargement des fichiers GTFS
 
@@ -108,8 +100,8 @@ cli::cli_alert_info("{length(gtfs_dirs)} dossiers GTFS à traiter.")
 cli::cli_h1("Lecture et compilation des GTFS")
 
 all_stops_data <- data.table::data.table()
-networks_data <- data.table::data.table()
 result_extract <- data.table::data.table()
+networks_list <- vector("list", length(gtfs_dirs))
 n_datasets <- length(gtfs_dirs)
 
 for (i in seq_along(gtfs_dirs)) {
@@ -302,17 +294,15 @@ for (i in seq_along(gtfs_dirs)) {
     resource_url <- dplyr::pull(dataset_info, resources_url) |> dplyr::first()
     dataset_title <- dplyr::pull(dataset_info, title) |> dplyr::first()
 
-    networks_data <- rbind(networks_data, data.table::data.table(
-        dataset_id = dataset_id,
-        dataset_title = dataset_title,
+    networks_list[[i]] <- data.table::data.table(
+        resources_id = as.integer(dataset_id),
         agency_name = agency_names,
-        date_extraction = as.character(fraicheur),
-        date_min = as.character(cal_range$min),
-        date_max = as.character(cal_range$max),
-        nb_stops = nrow(initial_data$stops),
-        nb_routes = nrow(initial_data$routes),
-        url = resource_url
-    ), fill = TRUE)
+        date_min_observed = as.character(cal_range$min),
+        date_max_observed = as.character(cal_range$max),
+        hors_periode = fraicheur < cal_range$min | fraicheur > cal_range$max,
+        nb_stops_observed = nrow(initial_data$stops),
+        nb_routes_observed = nrow(initial_data$routes)
+    )
 
 
     # --- Sauvegarde des tables brutes (avant tout filtrage) ---
@@ -654,16 +644,45 @@ for (tbl in tables_gtfs) {
     cli::cli_alert_success("Table {.val {tbl}} consolidée ({length(fichiers)} datasets).")
 }
 
+# Tableau des réseaux
+networks_observed <- data.table::rbindlist(networks_list, fill = TRUE)
 
-### Sauvegarde des résultats compilés
+gtfs_datasets_info <- gtfs_datasets_info |>
+    dplyr::left_join(networks_observed, by = "resources_id")
+
+arrow::write_parquet(
+    gtfs_datasets_info,
+    file.path(
+        data_dir, "transport.data.gouv.fr",
+        glue("{gsub('-','',fraicheur)}_gtfs_datasets_info.parquet")
+    )
+)
+
+### test
+list_cols <- names(gtfs_datasets_info)[sapply(gtfs_datasets_info, is.list)]
+
+for (col in list_cols) {
+    cat("Test:", col, "\n")
+
+    tmp <- gtfs_datasets_info |>
+        dplyr::select(resources_id, dplyr::all_of(col))
+
+    tryCatch(
+        {
+            arrow::write_parquet(tmp, tempfile(fileext = ".parquet"))
+            cat("OK\n")
+        },
+        error = function(e) {
+            cat("ERREUR :", conditionMessage(e), "\n")
+        }
+    )
+}
+### fin test
+
+
+### Sauvegarde des résultats
 
 cli::cli_h1("Sauvegarde")
-
-# Tableau des réseaux
-networks_out <- file.path(data_dir, glue("networks_{format(fraicheur, '%Y%m%d')}.parquet"))
-arrow::write_parquet(networks_data, networks_out)
-cli::cli_alert_success("{nrow(networks_data)} réseaux recensés → {.path {networks_out}}")
-
 
 # Rapport d'extraction
 arrow::write_parquet(
