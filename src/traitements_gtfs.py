@@ -226,8 +226,6 @@ for i, dataset_path in enumerate(gtfs_dirs, 1):
         "date_min_observed": date_min,
         "date_max_observed": date_max,
         "hors_periode": _in_period(FRAICHEUR, date_min, date_max),
-        "nb_stops_observed": len(tables.get("stops", pl.DataFrame())),
-        "nb_routes_observed": len(tables.get("routes", pl.DataFrame())),
     })
 
     # ── Nettoyage de base ──
@@ -522,26 +520,47 @@ for tbl in TABLES_GTFS:
     if not fichiers:
         log.warning("Table %s : aucun fichier trouvé, on passe.", tbl)
         continue
-    dfs = [pl.read_parquet(f) for f in fichiers]
-    consolidated = pl.concat(dfs, how="diagonal")
+
     out_path = CONSOLIDATED_DIR / f"{tbl}.parquet"
-    consolidated.write_parquet(out_path)
-    log.info("Table %s consolidée (%d datasets).", tbl, len(fichiers))
+    try:
+        if tbl == "stop_times":
+            lfs = [pl.scan_parquet(str(f)) for f in fichiers]
+            lf = pl.concat(lfs, how="diagonal_relaxed")
+            lf.sink_parquet(out_path)
+        else:
+            dfs = [pl.read_parquet(f) for f in fichiers]
+            consolidated = pl.concat(dfs, how="diagonal")
+            consolidated.write_parquet(out_path)
+            del dfs, consolidated
+
+        log.info("Table %s consolidée (%d datasets).", tbl, len(fichiers))
+        gc.collect()
+    except Exception as e:
+        log.error("Table %s : échec de consolidation (%s).", tbl, e)
+        log.error(traceback.format_exc())
+
 
 # ─────────────────────────────────────────────
-# Rapport des réseaux
+# Persistance des données brutes pour le rapport
 # ─────────────────────────────────────────────
+log.info("=== Persistance des données pour le rapport des réseaux ===")
+
+date_str = str(FRAICHEUR).replace("-", "")
+rapport_dir = DATA_DIR / "transport.data.gouv.fr"
+
 if networks_list:
     networks_df = pl.DataFrame(networks_list)
-    if len(gtfs_datasets) > 0 and "resources_id" in gtfs_datasets.columns:
-        gtfs_datasets_info_out = gtfs_datasets.join(networks_df, on="resources_id", how="left")
-    else:
-        gtfs_datasets_info_out = networks_df
+    networks_df.write_parquet(rapport_dir / f"{date_str}_networks_raw.parquet")
+    log.info("networks_df persisté (%d lignes).", len(networks_df))
+else:
+    log.warning("networks_list est vide, rien à persister pour le rapport.")
 
-    date_str = str(FRAICHEUR).replace("-", "")
-    gtfs_datasets_info_out.write_parquet(
-        DATA_DIR / "transport.data.gouv.fr" / f"{date_str}_gtfs_datasets_info.parquet"
-    )
+if len(gtfs_datasets) > 0:
+    gtfs_datasets.write_parquet(rapport_dir / f"{date_str}_gtfs_datasets_raw.parquet")
+    log.info("gtfs_datasets persisté (%d lignes).", len(gtfs_datasets))
+else:
+    log.warning("gtfs_datasets est vide, rien à persister pour le rapport.")
+
 
 # ─────────────────────────────────────────────
 # Sauvegarde des résultats

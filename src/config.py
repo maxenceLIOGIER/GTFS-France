@@ -6,21 +6,16 @@ import os
 from datetime import date
 from pathlib import Path
 
-# ─────────────────────────────────────────────
 # Paramètres principaux
-# ─────────────────────────────────────────────
-
-# FRAICHEUR = date.today()
-FRAICHEUR = date(2026, 6, 1)
-REDOWNLOAD = False
+FRAICHEUR = date.today()
+# FRAICHEUR = date(2026, 6, 1)
+REDOWNLOAD = True
 
 DAYS_EN = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
 FRAICHEUR_JOUR = DAYS_EN[FRAICHEUR.weekday()]
 
-# ─────────────────────────────────────────────
-# Chemins
-# ─────────────────────────────────────────────
 
+# Chemins
 DATA_DIR = Path(os.environ.get("DATA_DIR", Path.cwd() / "data"))
 BASE_DIR = DATA_DIR / "transport.data.gouv.fr" / str(FRAICHEUR)
 RAW_DIR = DATA_DIR / "transport.data.gouv.fr" / "raw_tables" / str(FRAICHEUR)
@@ -29,10 +24,8 @@ CONSOLIDATED_DIR = DATA_DIR / "transport.data.gouv.fr" / "consolidated" / str(FR
 for _d in [BASE_DIR, RAW_DIR, CONSOLIDATED_DIR]:
     _d.mkdir(parents=True, exist_ok=True)
 
-# ─────────────────────────────────────────────
-# Mapping route_type GTFS → catégorie
-# ─────────────────────────────────────────────
 
+# Mapping route_type GTFS → catégorie
 ROUTE_TYPE_MAP = {
     **{str(k): "bus" for k in [3, 11, *range(200, 210), *range(700, 717), 800]},
     **{str(k): "tramway" for k in [0, 5, *range(900, 907)]},
@@ -46,10 +39,8 @@ ROUTE_TYPE_MAP = {
 
 ROUTE_TYPE_PRIORITY = {"train": 1, "métro": 2, "tramway": 3, "bus": 4, "bus TAD": 4}
 
-# ─────────────────────────────────────────────
-# Nettoyage des noms d'arrêts
-# ─────────────────────────────────────────────
 
+# Nettoyage des noms d'arrêts
 STOPWORDS_FR = {
     "le", "la", "les", "de", "du", "des", "un", "une", "et", "en", "au",
     "aux", "à", "par", "sur", "sous", "pour", "dans", "ce", "se", "sa",
@@ -64,10 +55,8 @@ ABBREV_MAP = {
     "chemin": "ch", "boulevard": "bd", "avenue": "av",
 }
 
-# ─────────────────────────────────────────────
-# Validation des fichiers GTFS
-# ─────────────────────────────────────────────
 
+# Validation des fichiers GTFS
 REQUIRED_FILES = ["stops", "routes", "trips", "stop_times"]
 
 REQUIRED_COLS = {
