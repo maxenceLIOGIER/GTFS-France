@@ -187,7 +187,19 @@ def get_gtfs_datasets_info() -> pl.DataFrame:
         tags_list = item.get("tags") or []
         categorie_geo = covered_area[0].get("type") if covered_area else None
 
-        for row_idx, res in enumerate(item.get("resources") or []):
+        # "offers" : métadonnées des offres de transport couvertes par le jeu de données.
+        # Un agrégat a l'union des offres de ses membres et un GTFS individuel une seule offre.
+        # Fiable pour rapprocher un GTFS individuel de l'agrégat qui le contient,
+        # contrairement au nom d'agence qui n'est pas toujours discriminant.
+        offers_raw = item.get("offers") or []
+        offer_ids = [
+            o.get("identifiant_offre") for o in offers_raw if o.get("identifiant_offre") is not None
+        ]
+        offer_names = [
+            o.get("nom_commercial", "").strip() for o in offers_raw if o.get("nom_commercial")
+        ]
+
+        for _, res in enumerate(item.get("resources") or []):
             if not res.get("is_available", True):
                 continue
             fmt = (res.get("format") or "").strip()
@@ -228,6 +240,8 @@ def get_gtfs_datasets_info() -> pl.DataFrame:
                 "is_scolaire": any(st == "school" for st in sub_types),
                 "is_saisonnier": any(st == "seasonal" for st in sub_types),
                 "is_agregat": any(t == "agrégat_region" for t in tags_list),
+                "offer_ids": offer_ids,
+                "offer_names": offer_names,
                 "legal_owners": item.get("legal_owners"),
                 "created_at": item.get("created_at"),
                 "updated": item.get("updated"),
