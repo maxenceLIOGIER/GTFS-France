@@ -2,15 +2,8 @@
 Construction du rapport des réseaux (gtfs_datasets_info) à partir des données
 brutes persistées par traitements_gtfs.py.
 
-Pour rapprocher un GTFS individuel de l'agrégat régional qui le contient, on se base
-sur les "offers" de l'API transport.data.gouv.fr (champ offer_ids, cf. utils_gtfs.
-get_gtfs_datasets_info). Ces métadonnées sont en fait standardisées : chaque jeu de
-données (agrégat ou GTFS individuel) porte la liste des offres de transport (réseaux)
-qu'il couvre, identifiées par un identifiant_offre numérique stable. Un agrégat régional
-a l'union des offres de tous ses réseaux membres ; un GTFS individuel a (en général) une
-seule offre. Le rapprochement se fait donc par intersection des offer_ids, ce qui est
-bien plus fiable que l'ancien matching sur agency_name (qui échouait notamment sur les
-agences trop génériques comme "Keolis", "Transdev", "SNCF"...).
+Pour rapprocher un GTFS individuel de l'agrégat régional qui le contient,
+on se base sur les "offers" de l'API transport.data.gouv.fr
 
 Nécessite que traitements_gtfs.py ait déjà tourné pour la date FRAICHEUR
 (config.py), et donc que les fichiers suivants existent :
@@ -120,7 +113,8 @@ if "is_agregat" in gtfs_datasets_info.columns and "offer_ids" in gtfs_datasets_i
     ]
     gtfs_datasets_info = gtfs_datasets_info.with_columns([
         pl.Series("agregat_resources_id", [m[0] for m in matches]),
-        pl.Series("agregat_url", [m[1] for m in matches]),
+        # pl.Series("agregat_url", [m[1] for m in matches]),
+        # agregat_url inutile, on peut le retrouver via resource_id
     ])
     nb_matches = sum(1 for m in matches if m[0] is not None)
     log.info("%d GTFS individuel(s) rapproché(s) d'un agrégat.", nb_matches)
@@ -129,8 +123,56 @@ else:
 
 
 # Sauvegarde
-cols_a_suppr = ["slug"]
+
+# 1) colonnes supprimées
+cols_a_suppr = [
+    "slug", "id", "resources_type", "resources_updated", "start_date", "end_date"
+]
 gtfs_datasets_info = gtfs_datasets_info.drop(cols_a_suppr, strict=False)
+
+# 2) renommage
+RENAME_MAP = {
+    c: "resource_" + c.removeprefix("resources_")
+    for c in gtfs_datasets_info.columns
+    if c.startswith("resources_")
+}
+RENAME_MAP.update({
+    "datagouv_id": "dataset_id",
+    "resources_id": "resource_transport_id",
+    "title": "dataset_title",
+    "date_min_observed": "start_date",
+    "date_max_observed": "end_date",
+})
+RENAME_MAP = {k: v for k, v in RENAME_MAP.items() if k in gtfs_datasets_info.columns}
+gtfs_datasets_info = gtfs_datasets_info.rename(RENAME_MAP)
+
+if "hors_periode" in gtfs_datasets_info.columns:
+    gtfs_datasets_info = gtfs_datasets_info.with_columns(
+        pl.col("hors_periode").not_().alias("service_dates_valid")
+    ).drop("hors_periode")
+
+# reformatage des dates (YYYYMMDD -> JJ/MM/YYYY)
+for c in ("start_date", "end_date"):
+    gtfs_datasets_info = gtfs_datasets_info.with_columns(
+        pl.col(c).str.strptime(pl.Date, "%Y%m%d", strict=False).dt.strftime("%d/%m/%Y").alias(c)
+    )
+
+# 3) réorganisation : identifiants, puis titres, puis urls, en premières colonnes
+COLS_ID = ["dataset_id", "resource_transport_id", "resource_datagouv_id"]
+COLS_TITLE = ["dataset_title", "resource_title"]
+COLS_URL = ["page_url", "resource_url", "resource_original_url", "resource_page_url"]
+
+cols_prioritaires = [
+    c for c in COLS_ID + COLS_TITLE + COLS_URL if c in gtfs_datasets_info.columns
+]
+autres_cols = [c for c in gtfs_datasets_info.columns if c not in cols_prioritaires]
+gtfs_datasets_info = gtfs_datasets_info.select(cols_prioritaires + autres_cols)
+
+out_path = rapport_dir / f"{DATE_STR}_gtfs_datasets_info.parquet"
+gtfs_datasets_info.write_parquet(out_path)
+log.info("Rapport des réseaux écrit : %s (%d lignes).", out_path, len(gtfs_datasets_info))
+log.info("Colonnes du rapport : %s", gtfs_datasets_info.columns)
+
 
 # Conversion des colonnes nested pour l'export CSV
 for col, dtype in zip(gtfs_datasets_info.columns, gtfs_datasets_info.dtypes):
@@ -160,12 +202,6 @@ for col, dtype in zip(gtfs_datasets_info.columns, gtfs_datasets_info.dtypes):
             pl.col(col).struct.json_encode().alias(col)
         )
 
-out_path = rapport_dir / f"{DATE_STR}_gtfs_datasets_info.csv"
-gtfs_datasets_info.write_csv(out_path)
-
-log.info(
-    "Rapport des réseaux écrit : %s (%d lignes).",
-    out_path,
-    len(gtfs_datasets_info),
-)
-log.info("Colonnes du rapport : %s", gtfs_datasets_info.columns)
+csv_path = rapport_dir / f"{DATE_STR}_gtfs_datasets_info.csv"
+gtfs_datasets_info.write_csv(csv_path)
+log.info("Rapport des réseaux (CSV) écrit : %s.", csv_path)

@@ -7,8 +7,8 @@ from datetime import date
 from pathlib import Path
 
 # Paramètres principaux
-FRAICHEUR = date.today()
-# FRAICHEUR = date(2026, 6, 1)
+# FRAICHEUR = date.today()
+FRAICHEUR = date(2026, 8, 13) # format (YYYY, M, D)
 REDOWNLOAD = True
 
 DAYS_EN = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
